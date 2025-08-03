@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "edenredtools"
+version = "0.1.0"
+description = ""
+authors = ["Fazio Alessandro 3 (EXT Spindox) <alessandro.fazio@spindox.it>"]
+readme = "README.md"
+packages = [{ include = "edenredtools", from = "src" }]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+flask = "^3.1.1"
+cloup = "^3.0.7"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry.scripts]
+edenredtools = "edenredtools.cli.edenred_tools:run"
