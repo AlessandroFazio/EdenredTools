@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+set -ex
+
+DIR="$(cd "$(dirname "$0")" && pwd)"
+
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*|Windows_NT)
+    PS=$(command -v pwsh || command -v powershell)
+    "$PS" -NoLogo -NonInteractive -ExecutionPolicy Bypass \
+        -File "$DIR/scripts/install.ps1" "$@"
+      ;;
+  Linux|Darwin)
+      "$DIR/scripts/install.sh" "$@"
+      ;;
+  *)
+      echo "Unsupported OS: $(uname -s)" >&2; exit 1
+      ;;
+esac

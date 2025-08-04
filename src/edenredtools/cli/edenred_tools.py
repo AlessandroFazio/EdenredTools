@@ -1,7 +1,7 @@
 import cloup
 
 from edenredtools.cli.commands import Oauth2LocalProxyCommand
-from edenredtools.cli.security.crpyto import CryptoUtils
+from edenredtools.security.crypto import CryptoUtils
 
 ENVVAR_PREFIX = "EDENRED_TOOLS"
 

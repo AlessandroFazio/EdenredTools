@@ -1,6 +1,6 @@
 import base64
 from pydantic import HttpUrl
-from edenredtools.cli.security.crpyto import CryptoUtils
+from edenredtools.security.crypto import CryptoUtils
 from edenredtools.net.url import Url, UrlEqualityMode
 from edenredtools.oauth2.flows.authorization import LocalProxyTokenRequestState, Oauth2AuthorizeRequestParams
 
