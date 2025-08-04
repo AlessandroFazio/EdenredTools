@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 import requests
-from edenredtools.system.url import Url
+from edenredtools.net.url import Url
 
 
 class Oauth2IdentityProvider(ABC):

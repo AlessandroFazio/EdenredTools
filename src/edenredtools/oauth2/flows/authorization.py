@@ -8,14 +8,18 @@ import secrets
 import string
 from typing import Any, Dict, List, Optional
 
-from flask import json
+from pydantic import BaseModel, HttpUrl
 import requests
 
 from edenredtools.oauth2.identity_provider import Oauth2IdentityProvider
 from edenredtools.system.broswer import Browser
-from edenredtools.system.url import Url
 
+class LocalProxyTokenRequestState(BaseModel):
+    authorize_url: HttpUrl
+    callback_url: HttpUrl
+    fingerprint: str
 
+    
 @dataclass
 class Oauth2AuthorizeRequestParams:
     client_id: str
@@ -91,22 +95,6 @@ class Oauth2AuthorizeRequestParams:
     @classmethod
     def non_transients(cls) -> List[str]:
         return [f.name for f in fields(cls) if f.name not in cls.transients() + ["extra"]]
-    
-    @classmethod
-    def from_authorize_url(cls, url: Url) -> "Oauth2AuthorizeRequestParams":
-        flow_params = {}
-        extra = {}
-        for name, val in url.get_params().items():
-            if name in cls.transients():
-                continue
-            elif name in cls.non_transients():
-                flow_params[name] = val[0]
-            else:
-                extra[name] = val[0]
-                
-        raw = json.dumps({"authorize_url": str(url)}).encode("utf-8")
-        state = base64.urlsafe_b64encode(raw).decode("utf-8")
-        return cls(**flow_params, extra=extra, state=state)
 
 
 class Oauth2AuthorizationFlow:

@@ -10,6 +10,7 @@ packages = [{ include = "edenredtools", from = "src" }]
 python = "^3.10"
 flask = "^3.1.1"
 cloup = "^3.0.7"
+pydantic = "^2.11.7"
 
 
 [build-system]

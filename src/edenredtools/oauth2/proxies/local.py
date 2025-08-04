@@ -1,26 +1,21 @@
 from abc import ABC, abstractmethod
 import base64
-from dataclasses import dataclass
 import os
 import threading
-from flask import Flask, Response, json, render_template, request, jsonify
+from typing import Any
+from flask import Flask, Response, render_template, request, jsonify
+from pydantic import ValidationError
 
-from edenredtools.oauth2.common import Oauth2Urls
-from edenredtools.oauth2.flows.authorization import Oauth2AuthorizationFlow, Oauth2AuthorizeRequestParams
+from edenredtools.oauth2.flows.authorization import LocalProxyTokenRequestState, Oauth2AuthorizationFlow
+from edenredtools.oauth2.flows.factory import Oauth2AuthorizationFlowFactory
 from edenredtools.oauth2.flows.registry import AuthorizationFlowRegistry
 from edenredtools.oauth2.identity_provider import OidcIdentityProvider
+from edenredtools.oauth2.proxies.models import Oauth2LocalProxyConfig, LocalProxyTokenRequest
 from edenredtools.oauth2.tokens.registry import Oauth2TokenRegistry
 from edenredtools.system.registry import SystemRegistry
-from edenredtools.system.url import Url
+from edenredtools.net.url import Url
 
 
-@dataclass
-class Oauth2LocalProxyConfig:
-    port: int
-    callback_url: Url
-    authorize_flow_timeout: int
-    
-    
 class Oauth2LocalProxy(ABC):
     def __init__(
         self,
@@ -52,37 +47,54 @@ class FlaskOauth2LocalProxy(Oauth2LocalProxy):
     def _configure_flask(self) -> Flask:
         app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), 'templates'))
         app.route("/proxy/health", methods=["GET"])(self.handle_health_check)
-        app.route(self.config.callback_url.path(), methods=["GET"])(self.handle_oauth2_callback)
-        app.route("/proxy/token", methods=["GET"])(self.handle_get_token)
+        app.route("/proxy/token", methods=["POST"])(self.handle_get_token)
+        app.route('/<path:path>', methods=["GET"])(self.handle_catch_all)
         return app
 
-    def handle_health_check(self):
+    def handle_health_check(self) -> Any:
         return {"status": "ok"}, 200
     
-    def handle_oauth2_callback(self) -> None:
+    def handle_catch_all(self, path: str) -> Any:
+        return self.handle_oauth2_callback()
+            
+    def handle_oauth2_callback(self) -> Any:        
         authorize_url = None
         try:
-            # 1. Validate hostname
-            if request.host != self.config.callback_url.hostname():
-                raise ValueError("Request rejected: unexpected hostname.")
-
-            # 2. Extract and decode `state`
             state_param = request.args.get("state")
+            code_param = request.args.get("code")
+            
+            if not code_param:
+                raise ValueError("Missing authorization code")
+            
+            # 1. Extract and decode `state`
             if not state_param:
                 raise ValueError("Missing `state` parameter in the URL.")
-
+            
             state = None
             try:
                 decoded = base64.urlsafe_b64decode(state_param).decode("utf-8")
-                state = json.loads(decoded)
+                state = LocalProxyTokenRequestState.model_validate_json(decoded)
             except Exception:
                 raise ValueError("Malformed `state` parameter: unable to decode or parse.")
 
-            # 3. Validate and parse `authorize_url` from state
-            if not isinstance(state, dict) or "authorize_url" not in state:
-                raise ValueError("`state` parameter is missing `authorize_url`.")
+            authorize_url = Oauth2AuthorizationFlowFactory.create_authorize_url(state.authorize_url)
+            callback_url = Url.from_string(state.callback_url.encoded_string())
+            
+            # 2. Validate hostname
+            if request.host != callback_url.hostname():
+                raise ValueError("Request rejected: unexpected hostname.")
 
-            authorize_url = Url.from_string(state["authorize_url"], mode=Oauth2Urls.AUTHORIZE_URL_EQ_MODE)
+            # 3. Validate path
+            if request.path != callback_url.path():
+                raise ValueError("Request rejected: unexpected path.")
+            
+            expected_fingerprint = Oauth2AuthorizationFlowFactory.compute_fingerprint(
+                authorize_url=authorize_url,
+                callback_url=callback_url,
+                secret=self.config.fingerprint_secret
+            )
+            if state.fingerprint != expected_fingerprint:
+                raise RuntimeError("Callback fingerprint mismatch — possible tampering.")
 
             # 4. Retrieve flow
             flow_state = self.flow_regitry.get(authorize_url)
@@ -101,29 +113,30 @@ class FlaskOauth2LocalProxy(Oauth2LocalProxy):
             else:
                 raise ValueError(f"Unsupported response_type: {flow.authorize_params.response_type}")
 
-        except Exception as e:
-            if authorize_url:
-                self.flow_regitry.mark_error(authorize_url, str(e))
+        except ValueError as e:
+            if authorize_url: self.flow_regitry.mark_error(authorize_url, e)
             return Response(f"Proxy authorization callback failed: {str(e)}", status=400)
 
-    def _handle_oauth2_code_callback(self, authorize_url: Url, flow: Oauth2AuthorizationFlow) -> None:
+        except Exception as e:
+            if authorize_url: self.flow_regitry.mark_error(authorize_url, e)
+            return Response(f"Proxy authorization callback failed: {str(e)}", status=500)
+
+    def _handle_oauth2_code_callback(self, authorize_url: Url, flow: Oauth2AuthorizationFlow) -> Any:
         code = request.args.get("code")
         state = request.args.get("state")
-        if not code:
-            return "Missing authorization code", 400
-
         token_response = flow.exchange_code(code, state)
         self.token_registry.set(authorize_url, token_response)
 
-    def handle_get_token(self):
-        authorize_url = request.args.get("authorize_url")
-        if not authorize_url:
-            return "Missing authorize_url", 400
+    def handle_get_token(self) -> Any:
+        token_request = None
+        try:
+            token_request = LocalProxyTokenRequest(**request.form.to_dict())
+
+        except ValidationError as ve:
+            return Response(f"Invalid request: {ve}", status=400)
         
-        client_secret = request.args.get("client_secret")
-        
-        authorize_url = Url.from_string(authorize_url, mode=Oauth2Urls.AUTHORIZE_URL_EQ_MODE)\
-            .without_params(*Oauth2AuthorizeRequestParams.transients())
+        authorize_url = Oauth2AuthorizationFlowFactory.create_authorize_url(token_request.authorize_url)
+        callback_url = Url.from_string(token_request.callback_url.encoded_string())
 
         token = self.token_registry.read_valid_token(authorize_url)
         if token:
@@ -133,10 +146,19 @@ class FlaskOauth2LocalProxy(Oauth2LocalProxy):
         if flow_state.is_initiator():
             def run_flow():
                 try:
+                    if self.config.autoconfigure_system:
+                        self._autoconfigure_system(callback_url)
+                        
+                    state = Oauth2AuthorizationFlowFactory.create_state(
+                        authorize_url=authorize_url, 
+                        callback_url=callback_url, 
+                        secret=self.config.fingerprint_secret
+                    )
+                    
                     flow = Oauth2AuthorizationFlow(
-                        identity_provider=OidcIdentityProvider(authorize_url.get_base()),
-                        authorize_params=Oauth2AuthorizeRequestParams.from_authorize_url(authorize_url),
-                        client_secret=client_secret,
+                        identity_provider=OidcIdentityProvider(authorize_url.base_url()),
+                        authorize_params=Oauth2AuthorizationFlowFactory.create_params(authorize_url, state),
+                        client_secret=token_request.client_secret,
                         browser=self.system.broswer
                     )   
                     flow_state.set_flow(flow)
@@ -154,7 +176,7 @@ class FlaskOauth2LocalProxy(Oauth2LocalProxy):
             return Response(f"Error occurred: {e}")
         
         if flow_state.in_error():
-            return Response(f"Error occurred: {e}")
+            return Response(f"Error occurred: {flow_state.get_error()}")
         
         token = self.token_registry.read_valid_token(authorize_url)
         if token:
@@ -162,8 +184,18 @@ class FlaskOauth2LocalProxy(Oauth2LocalProxy):
         
         return Response(f"authorization flow completed successfully but could not find related token", 500)
 
+    def _autoconfigure_system(self, callback_url: Url) -> None:
+        # DNS auto configuration
+        try:
+            self.system.dns_resolver.add_mapping(("127.0.0.1", callback_url.hostname()))
+
+            # ip forwarding auto configuration
+            src_port, dst_port = callback_url.port(), self.config.port
+            if src_port != dst_port:
+                self.system.networking.configure_ip_forwarding(src_port, dst_port)
+        except Exception as e:
+            raise SystemError(f"system error occurred: {e}")
+            
     def start(self):
         print(f"Listening on http://0.0.0.0:{self.config.port}")
-        print(f"Token endpoint: /proxy/token")
-        print(f"Callback endpoint: {self.config.callback_url.path()}")
         self.app.run(host="0.0.0.0", port=self.config.port)

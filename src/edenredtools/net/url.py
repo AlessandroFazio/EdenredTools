@@ -114,7 +114,7 @@ class Url:
     def join(self, relative: str) -> "Url":
         return Url.from_string(urllib.parse.urljoin(str(self), relative), mode=self._mode)
 
-    def get_base(self, include_path: bool = False) -> "Url":
+    def base_url(self, include_path: bool = False) -> "Url":
         parts = dict(query='', fragment='', params='')
         if not include_path:
             parts['path'] = ''

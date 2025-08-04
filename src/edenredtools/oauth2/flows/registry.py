@@ -3,7 +3,7 @@ import threading
 from typing import Dict, Optional
 
 from edenredtools.oauth2.flows.authorization import Oauth2AuthorizationFlow
-from edenredtools.system.url import Url
+from edenredtools.net.url import Url
 
 
 class FlowState:
@@ -16,6 +16,9 @@ class FlowState:
         
     def in_error(self) -> bool:
         return bool(self._error)
+    
+    def get_error(self) -> Optional[Exception]:
+        return self._error
 
     def is_initiator(self) -> bool:
         return threading.get_ident() == self._initiator_thread_id

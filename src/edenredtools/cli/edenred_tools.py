@@ -1,6 +1,7 @@
 import cloup
 
 from edenredtools.cli.commands import Oauth2LocalProxyCommand
+from edenredtools.cli.security.crpyto import CryptoUtils
 
 ENVVAR_PREFIX = "EDENRED_TOOLS"
 
@@ -44,12 +45,6 @@ def edenred_tools_oauth2(ctx: cloup.Context) -> None:
 )
 @cloup.pass_context
 @cloup.option(
-    "-url", "--callback-url", "callback_url",
-    type=str,
-    required=True,
-    help="The redirect URI (e.g. 'http://localhost:8080/oauth/callback')."
-)
-@cloup.option(
     "-port", "--proxy-port", "proxy_port",
     type=int,
     default=8888,
@@ -70,22 +65,30 @@ def edenred_tools_oauth2(ctx: cloup.Context) -> None:
     show_default=True,
     help="If true, maps the callback hostname to 127.0.0.1 using the local DNS resolver (/etc/hosts or equivalent)."
 )
+@cloup.option(
+    "-secret", "--fingerprint-secret", "fingerprint_secret",
+    type=str,
+    envvar=ENVVAR_PREFIX + "_SECRET",
+    default=CryptoUtils.generate_secret_key,
+    show_envvar=True,
+    help="Secret used to produce state fingerprint for oauth2 authorization flow."
+)
 def edenred_tools_oauth2_local_proxy(
     ctx: cloup.Context,
-    callback_url: str,
     proxy_port: int,
     authorize_flow_timeout: int,
-    autoconfigure_system: bool
+    autoconfigure_system: bool,
+    fingerprint_secret: str
 ) -> None:
     """
     Launch a local OAuth2 authorization proxy server that intercepts browser
     redirects and captures tokens for CLI or development use.
     """
     Oauth2LocalProxyCommand(
-        callback_url=callback_url,
         proxy_port=proxy_port,
         authorize_flow_timeout=authorize_flow_timeout,
-        autoconfigure_system=autoconfigure_system
+        autoconfigure_system=autoconfigure_system,
+        fingerprint_secret=fingerprint_secret
     ).execute()
 
 

@@ -3,7 +3,7 @@ import threading
 from typing import Dict, Optional
 
 from edenredtools.oauth2.tokens.validator import TokenValidator
-from edenredtools.system.url import Url
+from edenredtools.net.url import Url
 
 
 class Oauth2TokenRegistry(ABC):
