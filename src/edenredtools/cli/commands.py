@@ -7,7 +7,8 @@ from edenredtools.oauth2.flows.registry import ThreadSafeAuthorizationFlowRegist
 from edenredtools.oauth2.proxies import FlaskOauth2LocalProxy, Oauth2LocalProxyConfig
 from edenredtools.oauth2.tokens.registry import ThreadSafeOauth2TokenRegistry
 from edenredtools.system.dns import LocalDnsResolver
-from edenredtools.system.platform import System
+from edenredtools.system.registry import SystemRegistry
+from edenredtools.system.url import Url
 
 
 class CliCommand(ABC):
@@ -21,8 +22,8 @@ class CliCommand(ABC):
     @abstractmethod
     def execute(self) -> None: ...
     
-    @abstractmethod
-    def validate(self) -> None: ...
+    def validate(self) -> None:
+        pass
 
     def handle_error(self, e: Exception) -> None:
         click.secho(f"[ERROR] {str(e)}", fg="red", err=True)
@@ -32,33 +33,37 @@ class CliCommand(ABC):
 class Oauth2LocalProxyCommand(CliCommand):
     def __init__(
         self, 
-        callback_hostname: str, 
-        proxy_port: int, 
-        callback_path: str,
+        callback_url: str, 
+        proxy_port: int,
         authorize_flow_timeout: int,
-        ensure_dns_mapping: bool,
+        autoconfigure_system: bool,
     ) -> None:
-        self.callback_hostname = callback_hostname
+        self.callback_url = Url.from_string(callback_url)
         self.proxy_port = proxy_port
-        self.callback_path = callback_path
         self.authorize_flow_timeout = authorize_flow_timeout
-        self.ensure_dns_mapping = ensure_dns_mapping
-        
-    def validate(self) -> None:
-        if self.ensure_dns_mapping and System.is_wsl():
-            raise ValueError("could not modify local dns register on Windows host.")
-    
+        self.autoconfigure_system = autoconfigure_system
+
     def execute(self) -> None:
-        if self.ensure_dns_mapping:
-            LocalDnsResolver().add_mapping(("127.0.0.1", self.callback_hostname))
+        system = SystemRegistry()
+        if self.autoconfigure_system: 
+            self._autoconfigure_system(system)
 
         FlaskOauth2LocalProxy(
+            system,
             ThreadSafeOauth2TokenRegistry(),
             ThreadSafeAuthorizationFlowRegistry(),
             Oauth2LocalProxyConfig(
-                hostname=self.callback_hostname,
+                callback_url=self.callback_url,
                 port=self.proxy_port,
-                callback_path=self.callback_path,
                 authorize_flow_timeout=self.authorize_flow_timeout
             )
         ).start()
+        
+    def _autoconfigure_system(self, system: SystemRegistry) -> None:
+        # DNS auto configuration
+        system.dns_resolver.add_mapping(("127.0.0.1", self.callback_url))
+
+        # ip forwarding auto configuration
+        src_port, dst_port = self.callback_url.port(), self.proxy_port
+        if src_port != dst_port:
+            system.networking.configure_ip_forwarding(src_port, dst_port)

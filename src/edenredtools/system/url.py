@@ -74,6 +74,23 @@ class Url:
 
     def to_string(self) -> str:
         return str(self)
+    
+    def port(self) -> int:
+        split = self._parsed_url.netloc.split(":", maxsplit=1)
+        if len(split) == 1:
+            if self._parsed_url.scheme == "http": 
+                return 80
+            elif self._parsed_url.scheme == "https": 
+                return 443
+            return -1
+        return int(split[1])
+    
+    def hostname(self) -> str:
+        split = self._parsed_url.netloc.split(":", maxsplit=1)
+        return split[0]
+    
+    def path(self) -> str:
+        return self._parsed_url.path
 
     def get_param(self, name: str) -> Optional[List[str]]:
         return self._params.get(name)

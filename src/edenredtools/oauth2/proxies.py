@@ -10,24 +10,26 @@ from edenredtools.oauth2.flows.authorization import Oauth2AuthorizationFlow, Oau
 from edenredtools.oauth2.flows.registry import AuthorizationFlowRegistry
 from edenredtools.oauth2.identity_provider import OidcIdentityProvider
 from edenredtools.oauth2.tokens.registry import Oauth2TokenRegistry
+from edenredtools.system.registry import SystemRegistry
 from edenredtools.system.url import Url
 
 
 @dataclass
 class Oauth2LocalProxyConfig:
-    hostname: str
     port: int
-    callback_path: str
+    callback_url: Url
     authorize_flow_timeout: int
     
     
 class Oauth2LocalProxy(ABC):
     def __init__(
         self,
+        system: SystemRegistry,
         token_registry: Oauth2TokenRegistry,
         flow_registry: AuthorizationFlowRegistry,
         config: Oauth2LocalProxyConfig
     ) -> None:
+        self.system = system
         self.token_registry = token_registry
         self.flow_regitry = flow_registry
         self.config = config
@@ -50,7 +52,7 @@ class FlaskOauth2LocalProxy(Oauth2LocalProxy):
     def _configure_flask(self) -> Flask:
         app = Flask(__name__, template_folder=os.path.join(os.path.dirname(__file__), 'templates'))
         app.route("/proxy/health", methods=["GET"])(self.handle_health_check)
-        app.route(self.config.callback_path, methods=["GET"])(self.handle_oauth2_callback)
+        app.route(self.config.callback_url.path(), methods=["GET"])(self.handle_oauth2_callback)
         app.route("/proxy/token", methods=["GET"])(self.handle_get_token)
         return app
 
@@ -61,7 +63,7 @@ class FlaskOauth2LocalProxy(Oauth2LocalProxy):
         authorize_url = None
         try:
             # 1. Validate hostname
-            if request.host != self.config.hostname:
+            if request.host != self.config.callback_url.hostname():
                 raise ValueError("Request rejected: unexpected hostname.")
 
             # 2. Extract and decode `state`
@@ -134,7 +136,8 @@ class FlaskOauth2LocalProxy(Oauth2LocalProxy):
                     flow = Oauth2AuthorizationFlow(
                         identity_provider=OidcIdentityProvider(authorize_url.get_base()),
                         authorize_params=Oauth2AuthorizeRequestParams.from_authorize_url(authorize_url),
-                        client_secret=client_secret
+                        client_secret=client_secret,
+                        browser=self.system.broswer
                     )   
                     flow_state.set_flow(flow)
                     flow.commence()
@@ -162,5 +165,5 @@ class FlaskOauth2LocalProxy(Oauth2LocalProxy):
     def start(self):
         print(f"Listening on http://0.0.0.0:{self.config.port}")
         print(f"Token endpoint: /proxy/token")
-        print(f"Callback endpoint: {self.config.callback_path}")
+        print(f"Callback endpoint: {self.config.callback_url.path()}")
         self.app.run(host="0.0.0.0", port=self.config.port)

@@ -16,12 +16,10 @@
                 "edenredtools",
                 "oauth2",
                 "local-proxy",
-                "-host",
-                "nowhere.edenred.net",
+                "-url",
+                "http://nowhere.edenred.net/oauth/callback",
                 "-port",
-                "8888",
-                "-path",
-                "/oauth/callback"
+                "8888"
             ]
         }
     ]

@@ -113,12 +113,14 @@ class Oauth2AuthorizationFlow:
     def __init__(
         self, 
         identity_provider: Oauth2IdentityProvider, 
-        authorize_params: Oauth2AuthorizeRequestParams, 
-        client_secret: Optional[str] = None
+        authorize_params: Oauth2AuthorizeRequestParams,
+        client_secret: Optional[str],
+        browser: Browser
     ) -> None:
         self.identity_provider = identity_provider
         self.authorize_params = authorize_params
         self.client_secret = client_secret
+        self.browser = browser
         self.validate()
         
     def validate(self) -> None:
@@ -129,7 +131,7 @@ class Oauth2AuthorizationFlow:
         authorize_url = self.identity_provider.authorize_url()
         query_params = self.authorize_params.to_query_params()
         url = str(authorize_url.with_params(**query_params))
-        Browser().open(url)
+        self.browser.open(url)
         
     def exchange_code(self, code: str, state: str) -> Dict[str, Any]:
         data = {

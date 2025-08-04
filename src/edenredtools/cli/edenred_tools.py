@@ -44,23 +44,17 @@ def edenred_tools_oauth2(ctx: cloup.Context) -> None:
 )
 @cloup.pass_context
 @cloup.option(
-    "-host", "--callback-hostname", "callback_hostname",
+    "-url", "--callback-url", "callback_url",
     type=str,
     required=True,
-    help="Hostname the proxy expects in incoming redirect requests (e.g. 'nowhere.edenred.net')."
+    help="The redirect URI (e.g. 'http://localhost:8080/oauth/callback')."
 )
 @cloup.option(
     "-port", "--proxy-port", "proxy_port",
     type=int,
-    default=8080,
+    default=8888,
     show_default=True,
     help="Local port on which the proxy server should listen for incoming redirect callbacks."
-)
-@cloup.option(
-    "-path", "--callback-path", "callback_path",
-    type=str,
-    required=True,
-    help="Path component of the redirect URI (e.g. '/oauth/callback')."
 )
 @cloup.option(
     "-timeout", "--authorize-timeout", "authorize_flow_timeout",
@@ -70,7 +64,7 @@ def edenred_tools_oauth2(ctx: cloup.Context) -> None:
     help="Maximum time (in seconds) to wait for the OAuth2 authorization flow to complete."
 )
 @cloup.option(
-    "-ensure-dns", "--ensure-dns-mapping", "ensure_dns_mapping",
+    "-autoconf", "--autoconfigure-system", "autoconfigure_system",
     type=bool,
     default=False,
     show_default=True,
@@ -78,22 +72,20 @@ def edenred_tools_oauth2(ctx: cloup.Context) -> None:
 )
 def edenred_tools_oauth2_local_proxy(
     ctx: cloup.Context,
-    callback_hostname: str,
+    callback_url: str,
     proxy_port: int,
-    callback_path: str,
     authorize_flow_timeout: int,
-    ensure_dns_mapping: bool
+    autoconfigure_system: bool
 ) -> None:
     """
     Launch a local OAuth2 authorization proxy server that intercepts browser
     redirects and captures tokens for CLI or development use.
     """
     Oauth2LocalProxyCommand(
-        callback_hostname=callback_hostname,
+        callback_url=callback_url,
         proxy_port=proxy_port,
-        callback_path=callback_path,
         authorize_flow_timeout=authorize_flow_timeout,
-        ensure_dns_mapping=ensure_dns_mapping
+        autoconfigure_system=autoconfigure_system
     ).execute()
 
 

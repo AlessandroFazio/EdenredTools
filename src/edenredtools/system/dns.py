@@ -1,16 +1,10 @@
 import re
 from typing import List, Tuple
 
-from edenredtools.system.platform import platform_dependent
+from edenredtools.system.platform import Platform
 from edenredtools.system.file import FileUtils
 
 
-@platform_dependent(
-    path = {
-        "Linux": "/etc/hosts",
-        "Darwin": "/etc/hosts",
-        "Windows": "C:\Windows\System32\drivers\etc"
-})
 class LocalDnsResolver:
     _MAPPING_RE_PATTERN = r'^\s*(\d{1,3}(?:\.\d{1,3}){3})\s+([^\s#]+)'
 
